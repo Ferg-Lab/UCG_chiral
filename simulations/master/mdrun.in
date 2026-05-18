@@ -1,0 +1,4 @@
+#srun /project2/andrewferguson/sivadasetty/doe/ucg/software/lammps/lammps_ucg_trung/lammps_chiral/installed-files/bin/lmp -in ucg-lmp_chiral.lammps &> out_iter_lammps.out
+
+mpirun -np 20 /project2/andrewferguson/sivadasetty/doe/ucg/software/lammps/lammps_ucg_trung/lammps_chiral/installed-files/bin/lmp -in ucg-lmp_chiral.lammps &> out_iter_lammps.out
+

@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# email on start, end, and abortion
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=sivadasetty@rcc.uchicago.edu
+#SBATCH --job-name=dUCG
+
+#SBATCH -o dUCG.o%j    # Name of stdout output file
+#SBATCH -e dUCG.e%j    # Name of stderr error file
+
+#SBATCH --partition=broadwl-lc #gm4-pmext
+##SBATCH --qos=gm4-cpu
+#SBATCH --account=pi-andrewferguson
+#SBATCH --nodes=1            # SET NUM NODES
+##SBATCH --mem=80G
+#SBATCH --exclusive
+#SBATCH --mem=0
+
+#SBATCH --ntasks-per-node=10 #20 #40  # SETS NUM MPI RANKS (1 PER GPU)
+##SBATCH --gres=gpu:4        # SET NUM GPUS
+##SBATCH --mem-per-cpu=4000
+##SBATCH --cpus-per-task=10    # SET NUM THREADS
+#SBATCH --exclude=midway2-0662
+
+module unload gcc gsl
+module unload python
+module load python/anaconda-2021.05 #python/anaconda-2020.02
+
+ulimit -l unlimited
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/project2/andrewferguson/sivadasetty/software/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+eval "$__conda_setup"
+export PATH="/project2/andrewferguson/sivadasetty/software/miniconda3/bin:$PATH"
+
+source /project2/andrewferguson/sivadasetty/software/scripts/plumed2.5.2-alltools.sh
+
+conda activate /project2/andrewferguson/sivadasetty/doe/ucg/software/mscg
+which python
+source activate /project2/andrewferguson/sivadasetty/doe/ucg/software/mscg
+which python
+
+which cgfm
+
+module load gsl/2.5
+
+module load gcc/6.2
+module load cuda/9.2
+#module load openmpi/3.1.2
+module load openmpi/2.0.2+gcc-6.2 
+module load cmake/3.15
+module load eigen/3.2
+
+
+python run_rdf_chiral.py
+
+

@@ -1,0 +1,40 @@
+units           lj
+newton          off
+atom_style      chiral
+boundary        p p p
+#########################################################
+neighbor        1.5 bin
+neigh_modify    delay 0 every 1 check yes
+pair_style      table/ucg/chirality linear 100000 state.conf
+read_data       ucg_initialconfig_ee_zero.dat
+#########################################################
+pair_coeff      1 1 OOOO/Pair_L-L.table L-L
+pair_coeff      2 2 OOOO/Pair_D-D.table D-D
+pair_coeff      1 2 OOOO/Pair_L-D.table L-D
+#########################################################
+variable	NLOG equal 100
+variable        DTIME equal 0.002 
+variable        DTSTAT equal 100*v_DTIME
+variable        T equal TTTT
+#########################################################
+timestep        ${DTIME}
+thermo          1000 #${NLOG}
+thermo_style    custom step temp press density pe ke
+log             UCG_log.lammps
+###########SET TEMPERATURE################################
+velocity        all create ${T} 7238765 mom yes rot yes dist gaussian
+fix mom1        all momentum 100 linear 1 1 1 #angular 
+##########################################################
+compute 	compute_chirality all property/atom chirality
+dump 		dump_1 all custom ${NLOG} UCG_chiral.lammpstrj id type x y z fx fy fz c_compute_chirality
+dump_modify 	dump_1 sort id
+##########################################################
+fix             1 all nvt temp ${T} ${T} ${DTSTAT}
+fix             evolve_chirality all update/chirality LLLL 3.0 SIGM 0.5 1.0 42 0 4.0 12 1
+##########################################################
+#restart         50000 ucg.restart
+run             NNNN #200000000 #post no
+##########################################################
+#write_restart   UCG_tetramer.restart
+write_data      UCG_tetramer.data
+##########################################################
