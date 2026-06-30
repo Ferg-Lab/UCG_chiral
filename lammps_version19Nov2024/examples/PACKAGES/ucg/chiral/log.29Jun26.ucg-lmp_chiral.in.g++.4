@@ -1,0 +1,160 @@
+LAMMPS (19 Nov 2024 - Development - patch_3Nov2022-8525-g5878a13492-modified)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:99)
+  using 1 OpenMP thread(s) per MPI task
+variable        steps index 100
+
+units           lj
+newton          off
+atom_style      chiral
+boundary        p p p
+#########################################################
+neighbor        1.5 bin
+neigh_modify    delay 0 every 1 check yes
+pair_style      table/ucg/chirality lookup 100000 state.conf
+#pair_style      lj/cut 5
+read_data       ucg_initialconfig_ee_zero.dat
+Reading data file ...
+  orthogonal box = (0 0 0) to (20.87064 20.87064 20.87064)
+  1 by 2 by 2 MPI processor grid
+  reading atoms ...
+  1000 atoms
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     0 = max # of 1-2 neighbors
+     0 = max # of 1-3 neighbors
+     0 = max # of 1-4 neighbors
+     1 = max # of special neighbors
+  special bonds CPU = 0.000 seconds
+  read_data CPU = 0.005 seconds
+#########################################################
+pair_coeff      1 1 Pair_L-L.table L-L
+pair_coeff      2 2 Pair_D-D.table D-D
+pair_coeff      1 2 Pair_L-L.table L-L
+pair_modify     shift yes
+#pair_modify     mix arithmetic
+#pair_coeff      1 1 1 .5 5.0
+#pair_coeff      2 2 2 .5 5.0
+#########################################################
+variable	    NLOG equal 10
+#variable        DTIME equal 0.0005 #0.001 #1
+variable        DTIME equal 0.002
+variable        DTSTAT equal 100*v_DTIME
+variable        T equal 4.6
+#########################################################
+timestep        ${DTIME}
+timestep        0.002
+thermo          ${NLOG}
+thermo          10
+thermo_style    custom step temp press density pe ke etotal
+#log             UCG_log.lammps
+###########SET TEMPERATURE################################
+velocity        all create ${T} 7238765 mom yes rot yes dist gaussian
+velocity        all create 4.6 7238765 mom yes rot yes dist gaussian
+fix mom1        all momentum 100 linear 1 1 1 #angular
+##########################################################
+compute 	compute_chirality all property/atom chirality
+dump 		dump_1 all custom ${NLOG} UCG_chiral.lammpstrj id type x y z fx fy fz c_compute_chirality
+dump 		dump_1 all custom 10 UCG_chiral.lammpstrj id type x y z fx fy fz c_compute_chirality
+dump_modify 	dump_1 sort id
+##########################################################
+#fix             1 all nvt temp ${T} ${T} ${DTSTAT}
+# Integrator: microcanonical ensemble (no thermostat/barostat)
+fix             int all nve
+
+variable nevery          index 200
+variable threshold_radii index 3.0
+variable a               index 4.645
+variable b               index 0.5
+variable c               index 1.0
+variable seed            index 847144
+variable cv_mode         index 1
+variable distcut         index 4.0
+variable first_nelements index 12
+variable maxiter         index 1
+
+#fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 42 0 4.0 12 1
+
+fix             evolve_chirality all update/chirality ${nevery} ${threshold_radii} $a $b $c ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 ${threshold_radii} $a $b $c ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 $a $b $c ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 $b $c ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 $c ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 ${seed} ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 847144 ${cv_mode} ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 847144 1 ${distcut} ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 847144 1 4.0 ${first_nelements} ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 847144 1 4.0 12 ${maxiter}
+fix             evolve_chirality all update/chirality 200 3.0 4.645 0.5 1.0 847144 1 4.0 12 1
+
+##########################################################
+#restart         50000 ucg.restart
+run             ${steps} #200000000 #post no
+run             100 
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 7.5
+  ghost atom cutoff = 7.5
+  binsize = 3.75, bins = 6 6 6
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair table/ucg/chirality, perpetual
+      attributes: full, newton off
+      pair build: full/bin
+      stencil: full/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 6.323 | 6.323 | 6.323 Mbytes
+   Step          Temp          Press         Density         PotEng         KinEng         TotEng    
+         0   4.6            0.74753968     0.11          -6.1559229      6.8931         0.73717714   
+        10   4.681446       0.75383103     0.11          -6.2797918      7.0151469      0.73535501   
+        20   4.866611       0.77104131     0.11          -6.5588542      7.2926165      0.73376235   
+        30   5.0953386      0.79130843     0.11          -6.9015962      7.6353649      0.73376869   
+        40   5.3064602      0.80631884     0.11          -7.217931       7.9517306      0.73379956   
+        50   5.4665139      0.81489159     0.11          -7.4576205      8.1915711      0.73395059   
+        60   5.5712991      0.81706324     0.11          -7.6147264      8.3485918      0.73386532   
+        70   5.6282389      0.81654369     0.11          -7.6996693      8.433916       0.73424672   
+        80   5.650604       0.81568584     0.11          -7.7326422      8.46743        0.73478786   
+        90   5.6515698      0.81571027     0.11          -7.7336157      8.4688773      0.73526162   
+       100   5.643716       0.81806834     0.11          -7.7207856      8.4571084      0.73632278   
+Loop time of 0.544026 on 4 procs for 100 steps with 1000 atoms
+
+Performance: 31763.203 tau/day, 183.815 timesteps/s, 183.815 katom-step/s
+99.9% CPU use with 4 MPI tasks x 1 OpenMP threads
+
+UCG/CHIRALITY timing breakdown:
+  Substate probablities (1st loop) time: 8.94592e-05    0.02%
+  Substate forces (2nd loop) time      : 0.290137      63.88%
+  Pair forces (3rd loop) time          : 0.163971      36.10%
+  Total   time                         : 0.454198
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.41956    | 0.45994    | 0.52953    |   6.2 | 84.54
+Bond    | 8.376e-06  | 9.596e-06  | 1.0985e-05 |   0.0 |  0.00
+Neigh   | 0.0022715  | 0.0025962  | 0.0029339  |   0.5 |  0.48
+Comm    | 0.0038847  | 0.0039281  | 0.0039746  |   0.1 |  0.72
+Output  | 0.0069167  | 0.013792   | 0.01771    |   3.6 |  2.54
+Modify  | 0.00027207 | 0.00099108 | 0.0016565  |   0.0 |  0.18
+Other   |            | 0.06277    |            |       | 11.54
+
+Nlocal:            250 ave         273 max         234 min
+Histogram: 1 1 0 0 1 0 0 0 0 1
+Nghost:           2342 ave        2370 max        2313 min
+Histogram: 1 0 1 0 0 0 0 1 0 1
+Neighs:              0 ave           0 max           0 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+FullNghs:        48426 ave       53896 max       44296 min
+Histogram: 1 1 0 0 0 1 0 0 0 1
+
+Total # of neighbors = 193704
+Ave neighs/atom = 193.704
+Ave special neighs/atom = 0
+Neighbor list builds = 2
+Dangerous builds = 0
+##########################################################
+#write_restart   UCG_tetramer.restart
+#write_data      UCG_tetramer.data
+##########################################################
+Total wall time: 0:00:00
