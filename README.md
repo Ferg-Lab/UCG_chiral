@@ -28,7 +28,7 @@ Cite
 
 If you use the codes or notebooks from this repo in your work, please cite:
 
-S. Dasetty, T. D. Nguyen, P. Sahrmann, H.B.Runesha,  G. A. Voth, and A. L. Ferguson. "Ultra coarse-grained molecular models of chiral molecular fluids" XXXX (submitted). DOI: XXXX
+S. Dasetty, T. D. Nguyen, P. Sahrmann, H. B. Runesha,  G. A. Voth, and A. L. Ferguson. "Ultra coarse-grained molecular models of chiral molecular fluids" XXXX (submitted). DOI: XXXX
 
 ```
 @article{ferglab2026UCGChiral,
