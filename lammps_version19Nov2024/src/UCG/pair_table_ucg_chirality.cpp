@@ -71,7 +71,7 @@ PairTableUCGChirality::PairTableUCGChirality(LAMMPS *lmp) : Pair(lmp)
   comm_forward = 3;
 
   mystyle = "ucg/chirality";
-  
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -106,13 +106,13 @@ PairTableUCGChirality::~PairTableUCGChirality()
 
 /* ---------------------------------------------------------------------- */
 
-void PairTableUCGChirality::threshold_prob_and_partial_from_cv(int type, double cv, double &prob, double &partial) 
+void PairTableUCGChirality::threshold_prob_and_partial_from_cv(int type, double cv, double &prob, double &partial)
 {
   if (type == 1){
     double a = probability_scaling_factor[type];
     double b = cv_thresholds[type];
     double c = probability_pre_factor[type];
-   
+
     //printf("type: %d a: %f b: %f c: %f cv: %f \n", type, a, b, c, cv);
 
     // sigmoidal activation based probability function and its derivative with respect to CV.
@@ -171,7 +171,7 @@ int PairTableUCGChirality::pack_forward_comm(int n, int *list, double *buf, int 
       buf[m++] = substate_probability_force[j][jsubstate]; // SD [This should be [i][isubstate] to be consistent.
     }
   }
-  
+
   return m;
 }
 
@@ -205,9 +205,9 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   int itype_actual, jtype_actual;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,factor_lj,fraction,value,a,b;
-  double cv_force; 
+  double cv_force;
   double substate_cv_forces; // SD
-  
+
   if (update->ntimestep <= update->beginstep+1) {
     time_substate_prob = time_substate_force = time_pair_forces = 0.0;
   }
@@ -240,7 +240,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   //#define DEBUG_PROBABILITIES
 
   // DEBUGGING OUTPUT FILES
-  #ifdef DEBUG_PROBABILITIES 
+  #ifdef DEBUG_PROBABILITIES
   FILE* densityoutfile = fopen("ucg_debug_local_ee.out", "a");
   if (!densityoutfile) {
     char str[128];
@@ -271,7 +271,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
 
-  #ifdef DEBUG_PROBABILITIES 
+  #ifdef DEBUG_PROBABILITIES
   fprintf(densityoutfile, "Number of neighbor lists or inum: %d \n", inum);
   #endif
 
@@ -306,23 +306,31 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   double time0, time1, time2, time3, time4;
 
   // First loop: Calculate the substate probabilities of each bead i. // SD
+  // compute_substate_prob() is a virtual seam: the base implementation runs
+  // calculate_substate_prob() on the host; the /gpu subclass overrides it to
+  // compute the per-atom probabilities on the device.
   time0 = platform::walltime();
-  calculate_substate_prob(cv_mode);
-  
+  compute_substate_prob(cv_mode);
+
   time1 = platform::walltime();
 
   // Communicate enantiomeric_excess and state probabilities with neighboring procs
   comm->forward_comm(this);
 
-  // Second loop: Calculate all forces that do not depend on 
-  // probability derivatives and against the state distribution 
+  // Second loop: Calculate all forces that do not depend on
+  // probability derivatives and against the state distribution
   // as well.
   time2 = platform::walltime();
   // [SD]
   // Specifically, calculate p(s_i | R) x p(s_j | R) x grad U_si_sj (R_ij)
-  // Also, keep track of (1) \sum_j \sum_s_j p(s_j | R) x U_si_sj (R_ij). 
+  // Also, keep track of (1) \sum_j \sum_s_j p(s_j | R) x U_si_sj (R_ij).
   // and determine (2) \sum_j \sum_s_j  U_si_sj x der(p(s_j | R), CV) x der(CV, dx).
+  // Phase-2/3 seam: a device subclass computes the tabulated pair forces AND
+  // the CV back-force (Phases 2 and 3) on the GPU and returns true; the base
+  // computes both here on the host.
   double temp_total_potenergy = 0;
+  bool dev_pair_forces = device_pair_forces(eflag, vflag);
+  if (!dev_pair_forces) {
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     xtmp = x[i][0];
@@ -371,7 +379,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
 
     double threshold_itype = threshold_radii[itype_actual];
     int nstates_i = n_states_per_type[itype_actual];
-    
+
     // Compute two-body forces at fixed state and effects of the
     // two body potential on state change.
     for (jj = 0; jj < jnum; jj++) {
@@ -402,7 +410,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
           } else {
             alphaprob = 1.0;
           }
-          
+
           // Iterate over all possible substates of particle j.
           for (jsubstate = 0; jsubstate < nstates_j; jsubstate++) {
             beta = jtype + jsubstate;
@@ -454,7 +462,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
             #endif
 
             fpair = fpair * alphaprob * betaprob; // [SD]: p(s_i | R) x p(s_j | R) x ∇U_si_sj(R_ij)
-            
+
             // Accumulate
             // SD: Accumulate force field forces from all particles j; substate i, substate j.
             pair_force += fpair;
@@ -484,8 +492,8 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
             if (nstates_i > 1) {
               // SD
               substate_probability_force[i][isubstate] += betaprob * evdwl; // Sum over all j and all s_j
-           
-              // SD: Accumulate part of the contribution from substate cv force to force 
+
+              // SD: Accumulate part of the contribution from substate cv force to force
               substate_cv_forces = compute_proximity_function_der(distance, threshold_jtype, -1.0*chirality[i]);
               substate_cv_forces *= evdwl * substate_prob_partial_j * rinv; // * (1/num_l_d_neighbors[j]);
 
@@ -496,7 +504,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
                 update->ntimestep, betaprob * evdwl, substate_probability_force[i][isubstate], substate_cv_forces, f[i][0], f[i][1], f[i][2]);
               #endif
             }
-            
+
           } // end of jsubstate
         } // end of isubstate
 
@@ -511,7 +519,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
         if (newton_pair) {
           f[j][0] -= pair_force * delx;
           f[j][1] -= pair_force * dely;
-          f[j][2] -= pair_force * delz;  
+          f[j][2] -= pair_force * delz;
         }
 
         //printf("Energy i %d energy_lj %f \n", tag[i], energy_lj);
@@ -521,6 +529,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
 
     } // end of jj
   } // end of ii
+  } // end host Phase-2 (device_pair_forces returned false)
 
   //printf("Energy %f\n", temp_total_potenergy);
 
@@ -529,7 +538,9 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   // Third loop: Calculate forces from probability derivatives on local atoms.
   // substate_cv_backforce on local atoms need to be accumulated from neighboring procs using reverse comm <-- this actually is not correct
   //   only need reverse comm if ghost atoms' substate_cv_backforce are computed
+  // (skipped when the device computed Phases 2+3 in the fused kernel)
 
+  if (!dev_pair_forces) {
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     xtmp = x[i][0];
@@ -552,7 +563,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
       delz = ztmp - x[j][2];
       rsq = delx * delx + dely * dely + delz * delz;
       jtype = type[j];
-      
+
       // Distribute the force down to every pair of particles
       // contributing to the density.
       if (rsq < cutsq[itype][jtype]) {
@@ -573,9 +584,9 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
           fx += fpair * delx;
           fy += fpair * dely;
           fz += fpair * delz;
-          
+
           #ifdef DEBUG_PROBABILITIES
-            fprintf(probabilityforceoutfile, "Step: " BIGINT_FORMAT "remaining fpair: %lg\n", update->ntimestep , fpair); 
+            fprintf(probabilityforceoutfile, "Step: " BIGINT_FORMAT "remaining fpair: %lg\n", update->ntimestep , fpair);
           #endif
 
           // [SD] OLD CODE: This is not required for full neighbor list.
@@ -598,6 +609,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
       } // end if rsq < cutsq
     } // end of jj
   } // end of ii
+  } // end host Phase-3 (skipped when device_pair_forces handled it)
 
   time4 = platform::walltime();
 
@@ -606,7 +618,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   //comm->reverse_comm(this);
 
   // Add the CV forces to other forces.
-  for (i = 0; i < nlocal; i++) {  
+  for (i = 0; i < nlocal; i++) {
     f[i][0] += substate_cv_backforce[i][0];
     f[i][1] += substate_cv_backforce[i][1];
     f[i][2] += substate_cv_backforce[i][2];
@@ -623,7 +635,7 @@ void PairTableUCGChirality::compute(int eflag, int vflag)
   fclose(steponeprobabilityoutfile);
   fclose(probabilityenergyoutfile);
   fclose(probabilityforceoutfile);
-  #endif 
+  #endif
 }
 
 /* ----------------------------------------------------------------------
@@ -636,9 +648,9 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
   double xtmp,ytmp,ztmp,delx,dely,delz;
   double rsq;
   //factor_lj,fraction,value,a,b;
-  double distance; 
+  double distance;
   double substate_cv_forces; // SD
-  
+
   int isubstate,jsubstate,ksubstate,alpha,beta;
   double alphaprob,betaprob;
   int *ilist,*jlist,*numneigh,**firstneigh;
@@ -660,7 +672,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
 
   // First loop: Calculate the substate probabilities of each bead i. // SD
   if (cv_mode == NEIGHBOR_INDEPENDENT) {
-    
+
     for (ii = 0; ii < inum; ii++) {
       i = ilist[ii];
       xtmp = x[i][0];
@@ -672,7 +684,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
       jnum = numneigh[i];
 
       //printf("Chirality values: %d \t %f\n", tag[i], chirality[i]);
-      #ifdef DEBUG_PROBABILITIES 
+      #ifdef DEBUG_PROBABILITIES
       fprintf(densityoutfile, "Number of neighbors of i: %d or tag i: %d are jnum: %d \n", jnum);
       #endif
 
@@ -681,7 +693,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
         // SD -- added this loop to calculate all substate probabilities. However, this is just for
         // keeping it consistent with rest of the code in next two stages. Note: The code only supports 2 substate systems.
         for (isubstate = 0; isubstate < n_states_per_type[itype_actual]; isubstate++) {
-          
+
           enantiomeric_excess[i] = chirality[i];
           if (isubstate == 0) {
             substate_probability[i][isubstate] = enantiomeric_excess[i];
@@ -720,7 +732,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
       jnum = numneigh[i];
 
       //printf("Chirality values: %d \t %f\n", tag[i], chirality[i]);
-      #ifdef DEBUG_PROBABILITIES 
+      #ifdef DEBUG_PROBABILITIES
       fprintf(densityoutfile, "Number of neighbors of i: %d or tag i: %d are jnum: %d \n", jnum);
       #endif
 
@@ -730,7 +742,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
         // keeping it consistent with rest of the code in next two stages. Note: The code only supports 2 substate systems.
         for (isubstate = 0; isubstate < n_states_per_type[itype_actual]; isubstate++) {
 
-          // For each particle with states, calculate the CV that 
+          // For each particle with states, calculate the CV that
           // we use to measure state probability (currently, local enantiomeric excess) [SD]
           int local_neigh = 0;
           for (jj = 0; jj < jnum; jj++) {
@@ -767,7 +779,7 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
             substate_probability[i][isubstate] = 1 - substate_probability[i][0];
             substate_probability_partial[i][isubstate] = -substate_probability_partial[i][0];
           }
-          
+
         }
       } else {
         // For types without substates, simply assign p0 = 1.
@@ -785,7 +797,28 @@ void PairTableUCGChirality::calculate_substate_prob(int cv_mode)
     }
 
   }
-  
+
+}
+
+/* ----------------------------------------------------------------------
+   Phase-1 seam: default host implementation. Accelerator subclasses override
+   this to fill the per-atom substate-probability arrays from the device.
+------------------------------------------------------------------------- */
+
+void PairTableUCGChirality::compute_substate_prob(int cv_mode)
+{
+  calculate_substate_prob(cv_mode);
+}
+
+/* ----------------------------------------------------------------------
+   Phase-2 seam: default host implementation does nothing and returns false,
+   so compute() runs the host Phase-2 loop. Accelerator subclasses override
+   this to compute the tabulated pair forces on the device.
+------------------------------------------------------------------------- */
+
+bool PairTableUCGChirality::device_pair_forces(int /*eflag*/, int /*vflag*/)
+{
+  return false;
 }
 
 /* ----------------------------------------------------------------------
@@ -846,7 +879,7 @@ void PairTableUCGChirality::settings(int narg, char **arg)
 
   for (int m = 0; m < ntables; m++) free_table(&tables[m]);
   memory->sfree(tables);
-  
+
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
@@ -858,7 +891,12 @@ void PairTableUCGChirality::settings(int narg, char **arg)
   tables = NULL;
 }
 
-void PairTableUCGChirality::read_state_settings(const char *file) {
+/* ----------------------------------------------------------------------
+   read the state settings from file
+------------------------------------------------------------------------- */
+
+void PairTableUCGChirality::read_state_settings(const char *file)
+{
   char *eof;
   char line[MAXLINE];
   char state_type[MAXLINE];
@@ -887,7 +925,7 @@ void PairTableUCGChirality::read_state_settings(const char *file) {
   memory->create(threshold_radii, n_actual_types + 1, "pair:n_states_per_type");
   memory->create(probability_scaling_factor, n_actual_types + 1, "pair:n_states_per_type");
   memory->create(probability_pre_factor, n_actual_types + 1, "pair:n_states_per_type");
-  
+
   state_params_allocated = 1;
 
   for (int i = 0; i <= n_total_states; i++) {
@@ -964,7 +1002,7 @@ void PairTableUCGChirality::read_state_settings(const char *file) {
       printf("probability_scaling_factor[0]: %g \t probability_scaling_factor[1]: %lg \n", probability_scaling_factor[0], probability_scaling_factor[1]);
       printf("probability_pre_factor[0]: %lg \t probability_pre_factor[1]: %lg \n", probability_pre_factor[0], probability_pre_factor[1]);
       printf("use_state_entropy[0]: %d \t use_state_entropy[1]: %d \n", use_state_entropy[0], use_state_entropy[1]);
-      printf("chemical_potentials[0]: %lg \t chemical_potentials[1]: %lg \t chemical_potentials[2]: %lg \n\n", chemical_potentials[0], chemical_potentials[1], chemical_potentials[2]);  
+      printf("chemical_potentials[0]: %lg \t chemical_potentials[1]: %lg \t chemical_potentials[2]: %lg \n\n", chemical_potentials[0], chemical_potentials[1], chemical_potentials[2]);
       printf("cv mode value %d and cv mode: %d\n",NEIGHBOR_INDEPENDENT,cv_mode);
       printf("\n=====================================================================\n");
     }
@@ -990,7 +1028,7 @@ void PairTableUCGChirality::coeff(int narg, char **arg)
 {
   if (narg != 4 && narg != 5) error->all(FLERR,"Illegal pair_coeff command");
   if (!allocated) allocate();
-  
+
   int ilo,ihi,jlo,jhi;
   utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
   utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
@@ -1041,7 +1079,7 @@ void PairTableUCGChirality::coeff(int narg, char **arg)
     error->all(FLERR,"Bitmapped table in file does not match requested table");
 
   // spline read-in values and compute r,e,f vectors within table
-  
+
   if (tb->match == 0) spline_table(tb);
 
   compute_table(tb);
@@ -1263,7 +1301,7 @@ void PairTableUCGChirality::spline_table(Table *tb)
     tb->fphi = (tb->ffile[tb->ninput-1] - tb->ffile[tb->ninput-2]) /
       (tb->rfile[tb->ninput-1] - tb->rfile[tb->ninput-2]);
   }
-  
+
   double fp0 = tb->fplo;
   double fpn = tb->fphi;
   spline(tb->rfile,tb->ffile,tb->ninput,fp0,fpn,tb->f2file);
