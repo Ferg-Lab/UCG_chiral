@@ -45,6 +45,17 @@ class PairTableUCGChirality : public Pair {
   double *cut_respa;
 
   void calculate_substate_prob(int cv_mode);
+  // Phase-1 seam: by default runs calculate_substate_prob() on the host;
+  // accelerator subclasses (e.g. table/ucg/chirality/gpu) override this to
+  // compute the per-atom substate probabilities on the device instead.
+  virtual void compute_substate_prob(int cv_mode);
+
+  // Phase-2 seam: by default returns false, so the base computes the tabulated
+  // pair forces (and the substate_probability_force reduction) on the host.
+  // Accelerator subclasses override this to compute Phase 2 on the device and
+  // return true; on return substate_probability_force[][] must be filled for
+  // local atoms (Phase 3 consumes it).
+  virtual bool device_pair_forces(int eflag, int vflag);
 
   int tabstyle,tablength;
   struct Table {
@@ -87,7 +98,7 @@ class PairTableUCGChirality : public Pair {
   double *threshold_radii;
   double *probability_scaling_factor; // SD
   double *probability_pre_factor; // SD
-  
+
   inline float fast_tanh(float x) {
     float e = expf(-2.0f * fabsf(x));
     float t = (1.0f - e) / (1.0f + e);
@@ -97,7 +108,7 @@ class PairTableUCGChirality : public Pair {
   // Compute local chirality scaled proximity function (tanh functions)
   inline double compute_proximity_function(double distance, double threshold, double neg_chirality) { // SD
     double tanh_factor = fast_tanh((distance - threshold) / (0.1 * threshold));
-    return neg_chirality * 0.5 * (1.0 - tanh_factor); 
+    return neg_chirality * 0.5 * (1.0 - tanh_factor);
   }
 
   inline double compute_proximity_function_der(double distance, double threshold, double neg_chirality) { // SD

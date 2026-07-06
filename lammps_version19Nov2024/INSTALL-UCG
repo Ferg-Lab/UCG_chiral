@@ -1,0 +1,33 @@
+# Instructions to build the UCG package
+
+# Download the 19Nov2024 version
+wget https://download.lammps.org/tars/lammps-19Nov2024.tar.gz
+
+# Unzip the tarball
+tar -xvf lammps-19Nov2024.tar.gz
+
+# Copy the source files under UCG_chiral/lammps_version19Nov2024 into the top level
+rsync -av UCG_chiral/lammps_version19Nov2024 lammps-19Nov2024
+
+cd lammps-19Nov2024
+
+# C/C++ compiler: C++17 compatible (gcc 10+), MPI libraries (OpenMPI or MPICH or Intel)
+# CUDA toolkit (11.x+) if building with the GPU package
+# CMake 3.19+
+
+# Load the modules on Midway2
+module load openmpi/4.1.1+gcc-10.1.0 cuda/11.5 cmake/3.26
+
+# On Midway3
+#module load openmpi/4.1.2+gcc-10.2.0 cuda/12.2 cmake/3.26
+
+mkdir build && cd build
+cmake ../cmake -C ../cmake/presets/basic.cmake -DPKG_UCG=on -DPKG_GPU=on -DGPU_API=cuda
+
+make -j4
+
+# if successful, the lmp binary is generated in build/
+# to run the binary, load the same modules above, except cmake
+
+
+
